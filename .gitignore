@@ -40,3 +40,4 @@ ENV/
 # Google Calendar credentials
 credentials.json
 token.json 
+*.pickle
