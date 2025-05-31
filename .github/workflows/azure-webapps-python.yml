@@ -29,23 +29,23 @@ jobs:
           source venv/bin/activate
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install gunicorn
 
       - name: Prepare deployment package
         run: |
           mkdir deploy_package
           cp -r app.py requirements.txt static templates calendar_setup.py web.config startup.txt deploy_package/
-          # Create config.json from the stock configuration
-          echo '{
-            "stocks": {
-              "Tech": ["AAPL", "MSFT", "GOOGL", "NVDA", "AMD"],
-              "Semiconductors": ["INTC", "TSM", "QCOM"],
-              "Electric Vehicles": ["TSLA", "RIVN", "NIO"],
-              "Social Media": ["META", "PINS", "SNAP"]
-            }
-          }' > deploy_package/config.json
+          cp -r venv deploy_package/
           cd deploy_package
           zip -r ../package.zip ./*
+        
+      - name: List deployment package contents
+        run: |
+          unzip -l package.zip
+          echo "Package size: $(ls -lh package.zip | awk '{print $5}')"
 
       - name: Azure Login
         uses: azure/login@v1
@@ -64,8 +64,11 @@ jobs:
           publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
           package: package.zip
           clean: true
+          restart: true
 
-      - name: Start Web App after deployment
+      - name: Start Web App and check logs
         run: |
           sleep 10
-          az webapp start --name ${{ secrets.AZURE_WEBAPP_NAME }} --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} 
+          az webapp start --name ${{ secrets.AZURE_WEBAPP_NAME }} --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }}
+          echo "Fetching application logs..."
+          az webapp log tail --name ${{ secrets.AZURE_WEBAPP_NAME }} --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} 
