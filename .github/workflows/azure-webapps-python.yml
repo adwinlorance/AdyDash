@@ -9,8 +9,11 @@ permissions:
   contents: read
 
 jobs:
-  build:
+  build-and-deploy:
     runs-on: ubuntu-latest
+    environment:
+      name: 'Production'
+      url: ${{ steps.deploy-to-webapp.outputs.webapp-url }}
 
     steps:
       - uses: actions/checkout@v3
@@ -24,38 +27,9 @@ jobs:
         run: |
           python -m venv venv
           source venv/bin/activate
-      
-      - name: Create deployment package
-        run: |
-          mkdir deployment_package
-          cp -r * deployment_package/
-          rm -rf deployment_package/venv
 
       - name: Install dependencies
         run: pip install -r requirements.txt
-        
-      - name: Upload artifact for deployment jobs
-        uses: actions/upload-artifact@v3
-        with:
-          name: python-app
-          path: deployment_package
-          retention-days: 1
-
-  deploy:
-    permissions:
-      contents: none
-    runs-on: ubuntu-latest
-    needs: build
-    environment:
-      name: 'Production'
-      url: ${{ steps.deploy-to-webapp.outputs.webapp-url }}
-
-    steps:
-      - name: Download artifact from build job
-        uses: actions/download-artifact@v3
-        with:
-          name: python-app
-          path: .
 
       - name: 'Deploy to Azure Web App'
         id: deploy-to-webapp
