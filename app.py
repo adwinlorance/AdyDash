@@ -8,6 +8,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 import logging
 from googleapiclient.discovery import build
 from calendar_setup import get_calendar_credentials
+from config_manager import ConfigManager
 import json
 import os.path
 
@@ -16,6 +17,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
+config_manager = ConfigManager()
 
 # Load environment variables and verify
 logger.info("Loading environment variables...")
@@ -38,20 +40,15 @@ cache = {
     'last_update': None
 }
 
-# Update the config file path to be relative to the app directory
-APP_DIR = os.path.dirname(os.path.abspath(__file__))
-
 def load_stock_config():
-    """Load stock configuration from config.json"""
+    """Load stock configuration from Azure App Configuration"""
     try:
-        config_path = os.path.join(APP_DIR, 'config.json')
-        with open(config_path, 'r') as f:
-            config = json.load(f)
-            # Flatten the dictionary of categories into a list of symbols
-            symbols = []
-            for category, stocks in config['stocks'].items():
-                symbols.extend(stocks)
-            return config['stocks'], symbols
+        config = config_manager.get_stock_config()
+        # Flatten the dictionary of categories into a list of symbols
+        symbols = []
+        for category, stocks in config['stocks'].items():
+            symbols.extend(stocks)
+        return config['stocks'], symbols
     except Exception as e:
         logger.error(f"Error loading stock configuration: {str(e)}")
         return {}, []

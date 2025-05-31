@@ -34,7 +34,16 @@ jobs:
       - name: Prepare deployment package
         run: |
           mkdir deploy_package
-          cp -r app.py requirements.txt static templates config.json calendar_setup.py web.config deploy_package/
+          cp -r app.py requirements.txt static templates calendar_setup.py web.config startup.txt deploy_package/
+          # Create config.json from the stock configuration
+          echo '{
+            "stocks": {
+              "Tech": ["AAPL", "MSFT", "GOOGL", "NVDA", "AMD"],
+              "Semiconductors": ["INTC", "TSM", "QCOM"],
+              "Electric Vehicles": ["TSLA", "RIVN", "NIO"],
+              "Social Media": ["META", "PINS", "SNAP"]
+            }
+          }' > deploy_package/config.json
           cd deploy_package
           zip -r ../package.zip ./*
 
