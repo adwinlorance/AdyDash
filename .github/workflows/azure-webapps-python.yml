@@ -24,17 +24,22 @@ jobs:
         run: |
           python -m venv venv
           source venv/bin/activate
+      
+      - name: Create deployment package
+        run: |
+          mkdir deployment_package
+          cp -r * deployment_package/
+          rm -rf deployment_package/venv
 
       - name: Install dependencies
         run: pip install -r requirements.txt
-
+        
       - name: Upload artifact for deployment jobs
         uses: actions/upload-artifact@v3
         with:
           name: python-app
-          path: |
-            .
-            !venv/
+          path: deployment_package
+          retention-days: 1
 
   deploy:
     permissions:
