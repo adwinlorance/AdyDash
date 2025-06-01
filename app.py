@@ -1,4 +1,4 @@
-from flask import Flask, render_template
+from flask import Flask, render_template, jsonify
 from datetime import datetime, timedelta
 import requests
 import os
@@ -387,6 +387,72 @@ try:
         except Exception as e:
             logger.error(f"Error in index route: {str(e)}", exc_info=True)
             return f"An error occurred: {str(e)}", 500
+
+    @app.route('/health')
+    def health_check():
+        health_status = {
+            'status': 'healthy',
+            'timestamp': datetime.now().isoformat(),
+            'services': {
+                'weather_api': 'unknown',
+                'finnhub_api': 'unknown',
+                'google_calendar': 'unknown',
+                'azure_config': 'unknown'
+            },
+            'environment': {
+                'weather_api_key': 'present' if os.getenv('WEATHER_API_KEY') else 'missing',
+                'finnhub_api_key': 'present' if os.getenv('FINNHUB_API_KEY') else 'missing',
+                'azure_app_config': 'present' if os.getenv('AZURE_APP_CONFIG_CONNECTION_STRING') else 'missing'
+            }
+        }
+
+        # Check Weather API
+        try:
+            if weather_api_key:
+                weather_url = f"http://api.openweathermap.org/data/2.5/weather?q={city}&appid={weather_api_key}&units=metric"
+                response = requests.get(weather_url)
+                health_status['services']['weather_api'] = 'healthy' if response.status_code == 200 else f'error: {response.status_code}'
+            else:
+                health_status['services']['weather_api'] = 'error: no API key'
+        except Exception as e:
+            health_status['services']['weather_api'] = f'error: {str(e)}'
+
+        # Check Finnhub API
+        try:
+            if finnhub_api_key:
+                headers = {'X-Finnhub-Token': finnhub_api_key}
+                response = requests.get('https://finnhub.io/api/v1/quote?symbol=AAPL', headers=headers)
+                health_status['services']['finnhub_api'] = 'healthy' if response.status_code == 200 else f'error: {response.status_code}'
+            else:
+                health_status['services']['finnhub_api'] = 'error: no API key'
+        except Exception as e:
+            health_status['services']['finnhub_api'] = f'error: {str(e)}'
+
+        # Check Google Calendar
+        try:
+            creds = get_calendar_credentials()
+            if creds:
+                health_status['services']['google_calendar'] = 'healthy'
+            else:
+                health_status['services']['google_calendar'] = 'error: no credentials'
+        except Exception as e:
+            health_status['services']['google_calendar'] = f'error: {str(e)}'
+
+        # Check Azure App Configuration
+        try:
+            config = config_manager.get_stock_config()
+            if config and 'stocks' in config:
+                health_status['services']['azure_config'] = 'healthy'
+            else:
+                health_status['services']['azure_config'] = 'error: no configuration'
+        except Exception as e:
+            health_status['services']['azure_config'] = f'error: {str(e)}'
+
+        # Overall status
+        if any('error' in status for status in health_status['services'].values()):
+            health_status['status'] = 'unhealthy'
+
+        return jsonify(health_status)
 
     # Add error handlers
     @app.errorhandler(500)
