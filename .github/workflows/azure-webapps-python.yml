@@ -27,7 +27,7 @@ jobs:
           # Copy only necessary files
           cp -r app.py requirements.txt web.config startup.txt deployment/
           cp -r static templates deployment/
-          cp calendar_setup.py deployment/
+          cp calendar_setup.py config_manager.py deployment/
           cd deployment
           # Create virtual environment in the deployment directory
           python -m venv antenv
@@ -35,6 +35,9 @@ jobs:
           pip install --upgrade pip
           pip install -r requirements.txt
           pip install gunicorn
+          # List files for verification
+          echo "Deployment package contents:"
+          ls -la
           # Create zip package
           zip -r ../package.zip ./*
 
