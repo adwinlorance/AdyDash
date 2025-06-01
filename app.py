@@ -9,6 +9,8 @@ import logging
 from googleapiclient.discovery import build
 from calendar_setup import get_calendar_credentials
 from config_manager import ConfigManager
+from middleware import rate_limit, security_headers, cache_control, validate_request, performance_monitor
+from flask_compress import Compress
 import json
 import os.path
 import sys
@@ -32,7 +34,13 @@ logger.info(f"Directory contents: {os.listdir('.')}")
 
 try:
     app = Flask(__name__)
+    Compress(app)  # Enable compression
     config_manager = ConfigManager()
+
+    # Apply security headers to all responses
+    @app.after_request
+    def after_request(response):
+        return security_headers(response)
 
     # Load environment variables and verify
     logger.info("Loading environment variables...")
@@ -374,6 +382,9 @@ try:
         logger.info("Initial data update completed")
 
     @app.route('/')
+    @rate_limit
+    @performance_monitor
+    @cache_control(max_age=300)  # Cache for 5 minutes
     def index():
         try:
             current_time = datetime.now()
@@ -389,6 +400,9 @@ try:
             return f"An error occurred: {str(e)}", 500
 
     @app.route('/health')
+    @rate_limit
+    @performance_monitor
+    @cache_control(max_age=60)  # Cache for 1 minute
     def health_check():
         health_status = {
             'status': 'healthy',
