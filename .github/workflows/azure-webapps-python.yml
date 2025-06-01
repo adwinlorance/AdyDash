@@ -5,11 +5,8 @@ on:
     branches: [ "main" ]
   workflow_dispatch:
 
-permissions:
-  contents: read
-
 jobs:
-  build-and-deploy:
+  deploy:
     runs-on: ubuntu-latest
     environment:
       name: 'Production'
@@ -18,57 +15,32 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: Set up Python version
+      - name: Set up Python
         uses: actions/setup-python@v3
         with:
           python-version: '3.12'
 
-      - name: Create and start virtual environment
-        run: |
-          python -m venv venv
-          source venv/bin/activate
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install gunicorn
-
       - name: Prepare deployment package
         run: |
-          mkdir deploy_package
-          cp -r app.py requirements.txt static templates calendar_setup.py web.config startup.txt deploy_package/
-          cp -r venv deploy_package/
-          cd deploy_package
+          # Create deployment package directory
+          mkdir deployment
+          # Copy only necessary files
+          cp -r app.py requirements.txt web.config startup.txt deployment/
+          cp -r static templates deployment/
+          cp calendar_setup.py deployment/
+          cd deployment
+          # Create virtual environment in the deployment directory
+          python -m venv antenv
+          source antenv/bin/activate
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install gunicorn
+          # Create zip package
           zip -r ../package.zip ./*
-        
-      - name: List deployment package contents
-        run: |
-          unzip -l package.zip
-          echo "Package size: $(ls -lh package.zip | awk '{print $5}')"
-
-      - name: Azure Login
-        uses: azure/login@v1
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
-
-      - name: Stop Web App before deployment
-        run: |
-          az webapp stop --name ${{ secrets.AZURE_WEBAPP_NAME }} --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }}
-          sleep 10
 
       - name: 'Deploy to Azure Web App'
         uses: azure/webapps-deploy@v2
         with:
           app-name: ${{ secrets.AZURE_WEBAPP_NAME }}
           publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
-          package: package.zip
-          clean: true
-          restart: true
-
-      - name: Start Web App and check logs
-        run: |
-          sleep 10
-          az webapp start --name ${{ secrets.AZURE_WEBAPP_NAME }} --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }}
-          echo "Fetching application logs..."
-          az webapp log tail --name ${{ secrets.AZURE_WEBAPP_NAME }} --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} 
+          package: package.zip 
