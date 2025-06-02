@@ -64,6 +64,24 @@ try:
         'news': {'loading': True},
         'last_update': None
     }
+    def start_background_tasks():
+        """Start background tasks like scheduler and initial data fetch."""
+        try:
+            logger.info("Starting scheduler from module level...")
+            scheduler = BackgroundScheduler()
+            scheduler.add_job(func=update_weather, trigger="interval", minutes=5)
+            scheduler.add_job(func=update_calendar, trigger="interval", minutes=15)
+            scheduler.add_job(func=update_stocks, trigger="interval", hours=1)
+            scheduler.add_job(func=update_news, trigger="interval", minutes=30)
+            scheduler.start()
+
+            import threading
+            threading.Thread(target=update_all, daemon=True).start()
+        except Exception as e:
+            logger.error(f"Error starting background tasks: {str(e)}", exc_info=True)
+
+    # Start the scheduler and initial data fetch
+    start_background_tasks()
 
     def load_stock_config():
         """Load stock configuration from Azure App Configuration"""
@@ -380,6 +398,16 @@ try:
         update_stocks()
         update_news()
         logger.info("Initial data update completed")
+
+    @app.route('/trigger-weather')
+    def trigger_weather():
+            update_weather()
+            return "Weather updated", 200
+
+    @app.route('/cache')
+    def show_cache():
+        return jsonify(cache)
+  
 
     @app.route('/')
     @rate_limit
