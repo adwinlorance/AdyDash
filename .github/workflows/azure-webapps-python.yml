@@ -22,23 +22,14 @@ jobs:
 
       - name: Prepare deployment package
         run: |
-          # Create deployment structure
-          mkdir -p deployment/app
+          mkdir deployment
+          # Copy all Python files
+          cp *.py deployment/
+          # Copy static files and templates
+          cp -r static templates deployment/
+          # Copy configuration files
+          cp requirements.txt runtime.txt web.config deployment/
           
-          # Copy application files to app directory
-          cp app.py deployment/app/
-          cp application.py deployment/app/
-          cp middleware.py deployment/app/
-          cp calendar_setup.py deployment/app/
-          cp config_manager.py deployment/app/
-          cp -r static templates deployment/app/
-          
-          # Copy configuration files to root
-          cp requirements.txt deployment/
-          cp runtime.txt deployment/
-          cp web.config deployment/
-          
-          # Create virtual environment
           cd deployment
           python -m venv antenv
           source antenv/bin/activate
@@ -46,12 +37,8 @@ jobs:
           pip install -r requirements.txt
           pip install gunicorn
           deactivate
-          cd ..
           
-          # Create deployment package
-          cd deployment
           zip -r ../deployment.zip .
-          cd ..
 
       - name: Deploy to Azure Web App
         id: deploy-to-webapp
