@@ -842,7 +842,7 @@
                 <h2>Weather</h2>
             </div>
             <div id="weather">
-                {% if weather.loading %}
+                {% if weather and not weather.get('error') and weather.get('temperature_c') is not none %}
                     <div class="loading">
                         <div class="loading-spinner"></div>
                         <span>Loading weather data...</span>
