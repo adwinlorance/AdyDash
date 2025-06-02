@@ -399,11 +399,26 @@ try:
             logger.error(f"Error in index route: {str(e)}", exc_info=True)
             return f"An error occurred: {str(e)}", 500
 
+    # Basic health check endpoint that doesn't depend on external services
     @app.route('/health')
+    def health_check():
+        try:
+            health_status = {
+                'status': 'healthy',
+                'timestamp': datetime.now().isoformat(),
+                'version': '1.0'
+            }
+            return jsonify(health_status), 200
+        except Exception as e:
+            logger.error(f"Health check error: {str(e)}")
+            return jsonify({'status': 'unhealthy', 'error': str(e)}), 503
+
+    # Full health check endpoint for detailed monitoring
+    @app.route('/health/full')
     @rate_limit
     @performance_monitor
-    @cache_control(max_age=300)  # Cache for 5 minutes since we're single instance
-    def health_check():
+    @cache_control(max_age=300)
+    def full_health_check():
         health_status = {
             'status': 'healthy',
             'timestamp': datetime.now().isoformat(),

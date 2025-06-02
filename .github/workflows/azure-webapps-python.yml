@@ -18,7 +18,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v3
         with:
-          python-version: '3.12'
+          python-version: '3.9'
 
       - name: Prepare deployment package
         run: |
@@ -29,7 +29,9 @@ jobs:
           cd deployment
           python -m venv antenv
           source antenv/bin/activate
+          python -m pip install --upgrade pip
           pip install -r requirements.txt
+          pip install gunicorn
           deactivate
           cd ..
           zip -r deployment.zip deployment/
@@ -51,6 +53,6 @@ jobs:
         run: |
           echo "Waiting for deployment to complete..."
           sleep 30
-          echo "Checking application startup logs (will timeout after 30 seconds)..."
-          timeout 30 az webapp log tail --name ${{ secrets.AZURE_WEBAPP_NAME }} --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} || true
+          echo "Checking application startup logs (will timeout after 60 seconds)..."
+          timeout 60 az webapp log tail --name ${{ vars.AZURE_WEBAPP_NAME }} --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} || true
           echo "Deployment workflow completed." 

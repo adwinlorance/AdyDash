@@ -1,1 +1,1 @@
-python -m gunicorn --bind=0.0.0.0 --timeout 600 app:app 
+cd /home/site/wwwroot && gunicorn --bind=0.0.0.0:8000 --timeout 600 --access-logfile "-" --error-logfile "-" --log-level debug --capture-output app:app 
