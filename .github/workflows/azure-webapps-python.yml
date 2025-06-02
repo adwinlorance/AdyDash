@@ -23,7 +23,7 @@ jobs:
       - name: Prepare deployment package
         run: |
           mkdir deployment
-          cp -r app.py requirements.txt web.config startup.txt middleware.py deployment/
+          cp -r app.py requirements.txt web.config startup.txt middleware.py runtime.txt deployment/
           cp -r static templates deployment/
           cp calendar_setup.py config_manager.py deployment/
           cd deployment
