@@ -402,11 +402,13 @@ try:
     @app.route('/health')
     @rate_limit
     @performance_monitor
-    @cache_control(max_age=60)  # Cache for 1 minute
+    @cache_control(max_age=300)  # Cache for 5 minutes since we're single instance
     def health_check():
         health_status = {
             'status': 'healthy',
             'timestamp': datetime.now().isoformat(),
+            'version': '1.0',
+            'instance': os.environ.get('WEBSITE_INSTANCE_ID', 'unknown'),
             'services': {
                 'weather_api': 'unknown',
                 'finnhub_api': 'unknown',
@@ -424,22 +426,24 @@ try:
         try:
             if weather_api_key:
                 weather_url = f"http://api.openweathermap.org/data/2.5/weather?q={city}&appid={weather_api_key}&units=metric"
-                response = requests.get(weather_url)
+                response = requests.get(weather_url, timeout=10)  # Increased timeout for single instance
                 health_status['services']['weather_api'] = 'healthy' if response.status_code == 200 else f'error: {response.status_code}'
             else:
                 health_status['services']['weather_api'] = 'error: no API key'
         except Exception as e:
+            logger.error(f"Health check - Weather API error: {str(e)}")
             health_status['services']['weather_api'] = f'error: {str(e)}'
 
         # Check Finnhub API
         try:
             if finnhub_api_key:
                 headers = {'X-Finnhub-Token': finnhub_api_key}
-                response = requests.get('https://finnhub.io/api/v1/quote?symbol=AAPL', headers=headers)
+                response = requests.get('https://finnhub.io/api/v1/quote?symbol=AAPL', headers=headers, timeout=10)  # Increased timeout
                 health_status['services']['finnhub_api'] = 'healthy' if response.status_code == 200 else f'error: {response.status_code}'
             else:
                 health_status['services']['finnhub_api'] = 'error: no API key'
         except Exception as e:
+            logger.error(f"Health check - Finnhub API error: {str(e)}")
             health_status['services']['finnhub_api'] = f'error: {str(e)}'
 
         # Check Google Calendar
@@ -450,6 +454,7 @@ try:
             else:
                 health_status['services']['google_calendar'] = 'error: no credentials'
         except Exception as e:
+            logger.error(f"Health check - Google Calendar error: {str(e)}")
             health_status['services']['google_calendar'] = f'error: {str(e)}'
 
         # Check Azure App Configuration
@@ -460,13 +465,31 @@ try:
             else:
                 health_status['services']['azure_config'] = 'error: no configuration'
         except Exception as e:
+            logger.error(f"Health check - Azure Config error: {str(e)}")
             health_status['services']['azure_config'] = f'error: {str(e)}'
 
-        # Overall status
-        if any('error' in status for status in health_status['services'].values()):
-            health_status['status'] = 'unhealthy'
+        # For single instance, we'll be more lenient - only mark as unhealthy if all critical services are down
+        critical_services = ['weather_api', 'finnhub_api']  # Define which services are critical
+        critical_services_status = [
+            health_status['services'][service] == 'healthy' 
+            for service in critical_services
+        ]
+        
+        is_healthy = any(critical_services_status)  # Need at least one critical service working
 
-        return jsonify(health_status)
+        if not is_healthy:
+            health_status['status'] = 'unhealthy'
+            logger.warning("Health check failed - all critical services are down", extra=health_status)
+            return jsonify(health_status), 503  # Service Unavailable
+        
+        # If we get here, at least one critical service is working
+        if not all(critical_services_status):
+            health_status['status'] = 'degraded'
+            logger.warning("Health check warning - some services are down", extra=health_status)
+            return jsonify(health_status), 200  # Still return 200 to prevent instance replacement
+        
+        logger.info("Health check passed", extra=health_status)
+        return jsonify(health_status), 200
 
     # Add error handlers
     @app.errorhandler(500)
