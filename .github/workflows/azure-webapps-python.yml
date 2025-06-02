@@ -23,25 +23,24 @@ jobs:
       - name: Prepare deployment package
         run: |
           mkdir deployment
-          cp -r app.py requirements.txt web.config startup.txt deployment/
+          cp -r app.py requirements.txt web.config startup.txt middleware.py deployment/
           cp -r static templates deployment/
           cp calendar_setup.py config_manager.py deployment/
           cd deployment
           python -m venv antenv
           source antenv/bin/activate
-          pip install --upgrade pip
           pip install -r requirements.txt
-          pip install gunicorn
-          echo "Deployment package contents:"
-          ls -la
-          zip -r ../package.zip ./*
+          deactivate
+          cd ..
+          zip -r deployment.zip deployment/
 
-      - name: 'Deploy to Azure Web App'
+      - name: Deploy to Azure Web App
+        id: deploy-to-webapp
         uses: azure/webapps-deploy@v2
         with:
-          app-name: ${{ secrets.AZURE_WEBAPP_NAME }}
+          app-name: ${{ vars.AZURE_WEBAPP_NAME }}
           publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
-          package: package.zip
+          package: deployment.zip
 
       - name: Azure Login
         uses: azure/login@v1
