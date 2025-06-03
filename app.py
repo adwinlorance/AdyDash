@@ -36,6 +36,65 @@ try:
     app = Flask(__name__)
     Compress(app)  # Enable compression
     config_manager = ConfigManager()
+    scheduler = None  # Global scheduler instance
+
+    def init_scheduler():
+        """Initialize the background scheduler"""
+        global scheduler
+        if scheduler is None:
+            try:
+                logger.info("Initializing background scheduler...")
+                scheduler = BackgroundScheduler()
+                scheduler.add_job(func=update_weather, trigger="interval", minutes=5)
+                scheduler.add_job(func=update_calendar, trigger="interval", minutes=15)
+                scheduler.add_job(func=update_stocks, trigger="interval", hours=1)
+                scheduler.add_job(func=update_news, trigger="interval", minutes=30)
+                scheduler.start()
+                logger.info("Background scheduler started successfully")
+                
+                # Perform initial data load
+                logger.info("Starting initial data load...")
+                update_all()
+                logger.info("Initial data load completed")
+                return True
+            except Exception as e:
+                logger.error(f"Failed to initialize scheduler: {str(e)}", exc_info=True)
+                return False
+        return True
+
+    # Initialize scheduler when the app starts
+    if not init_scheduler():
+        logger.error("Failed to initialize the application scheduler")
+
+    @app.before_first_request
+    def before_first_request():
+        """Ensure data is loaded before the first request"""
+        try:
+            if not scheduler or not scheduler.running:
+                logger.warning("Scheduler not running, attempting to initialize...")
+                init_scheduler()
+            
+            # Check if we have any data
+            if all(isinstance(cache[key], dict) and cache[key].get('loading', False) 
+                  for key in ['weather', 'stocks', 'news', 'calendar']):
+                logger.info("No data loaded, triggering initial load...")
+                update_all()
+        except Exception as e:
+            logger.error(f"Error in before_first_request: {str(e)}", exc_info=True)
+
+    @app.route('/status')
+    def scheduler_status():
+        """Endpoint to check scheduler status"""
+        return jsonify({
+            'scheduler_running': bool(scheduler and scheduler.running),
+            'cache_status': {
+                'weather': not isinstance(cache['weather'], dict) or not cache['weather'].get('loading', False),
+                'stocks': not isinstance(cache['stocks'], dict) or not cache['stocks'].get('loading', False),
+                'news': not isinstance(cache['news'], dict) or not cache['news'].get('loading', False),
+                'calendar': not isinstance(cache['calendar'], dict) or not cache['calendar'].get('loading', False)
+            },
+            'last_update': str(cache['last_update']) if cache['last_update'] else None
+        })
 
     # Apply security headers to all responses
     @app.after_request
@@ -64,24 +123,7 @@ try:
         'news': {'loading': True},
         'last_update': None
     }
-    def start_background_tasks():
-        """Start background tasks like scheduler and initial data fetch."""
-        try:
-            logger.info("Starting scheduler from module level...")
-            scheduler = BackgroundScheduler()
-            scheduler.add_job(func=update_weather, trigger="interval", minutes=5)
-            scheduler.add_job(func=update_calendar, trigger="interval", minutes=15)
-            scheduler.add_job(func=update_stocks, trigger="interval", hours=1)
-            scheduler.add_job(func=update_news, trigger="interval", minutes=30)
-            scheduler.start()
-
-            import threading
-            threading.Thread(target=update_all, daemon=True).start()
-        except Exception as e:
-            logger.error(f"Error starting background tasks: {str(e)}", exc_info=True)
-
-    # Start the scheduler and initial data fetch
-    start_background_tasks()
+    
 
     def load_stock_config():
         """Load stock configuration from Azure App Configuration"""
@@ -401,8 +443,8 @@ try:
 
     @app.route('/trigger-weather')
     def trigger_weather():
-            update_weather()
-            return "Weather updated", 200
+        update_weather()
+        return "Weather updated", 200
 
     @app.route('/cache')
     def show_cache():

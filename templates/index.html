@@ -842,6 +842,7 @@
                 <h2>Weather</h2>
             </div>
             <div id="weather">
+                <pre style="color: lime; font-size: 0.9em;">{{ weather | tojson(indent=2) }}</pre>
                 {% if weather and not weather.get('error') and weather.get('temperature_c') is not none %}
                     <div class="loading">
                         <div class="loading-spinner"></div>
