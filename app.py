@@ -38,83 +38,6 @@ try:
     config_manager = ConfigManager()
     scheduler = None  # Global scheduler instance
 
-    def init_scheduler():
-        """Initialize the background scheduler"""
-        global scheduler
-        if scheduler is None:
-            try:
-                logger.info("Initializing background scheduler...")
-                scheduler = BackgroundScheduler()
-                scheduler.add_job(func=update_weather, trigger="interval", minutes=5)
-                scheduler.add_job(func=update_calendar, trigger="interval", minutes=15)
-                scheduler.add_job(func=update_stocks, trigger="interval", hours=1)
-                scheduler.add_job(func=update_news, trigger="interval", minutes=30)
-                scheduler.start()
-                logger.info("Background scheduler started successfully")
-                
-                # Perform initial data load
-                logger.info("Starting initial data load...")
-                update_all()
-                logger.info("Initial data load completed")
-                return True
-            except Exception as e:
-                logger.error(f"Failed to initialize scheduler: {str(e)}", exc_info=True)
-                return False
-        return True
-
-    # Initialize scheduler when the app starts
-    if not init_scheduler():
-        logger.error("Failed to initialize the application scheduler")
-
-    @app.before_first_request
-    def before_first_request():
-        """Ensure data is loaded before the first request"""
-        try:
-            if not scheduler or not scheduler.running:
-                logger.warning("Scheduler not running, attempting to initialize...")
-                init_scheduler()
-            
-            # Check if we have any data
-            if all(isinstance(cache[key], dict) and cache[key].get('loading', False) 
-                  for key in ['weather', 'stocks', 'news', 'calendar']):
-                logger.info("No data loaded, triggering initial load...")
-                update_all()
-        except Exception as e:
-            logger.error(f"Error in before_first_request: {str(e)}", exc_info=True)
-
-    @app.route('/status')
-    def scheduler_status():
-        """Endpoint to check scheduler status"""
-        return jsonify({
-            'scheduler_running': bool(scheduler and scheduler.running),
-            'cache_status': {
-                'weather': not isinstance(cache['weather'], dict) or not cache['weather'].get('loading', False),
-                'stocks': not isinstance(cache['stocks'], dict) or not cache['stocks'].get('loading', False),
-                'news': not isinstance(cache['news'], dict) or not cache['news'].get('loading', False),
-                'calendar': not isinstance(cache['calendar'], dict) or not cache['calendar'].get('loading', False)
-            },
-            'last_update': str(cache['last_update']) if cache['last_update'] else None
-        })
-
-    # Apply security headers to all responses
-    @app.after_request
-    def after_request(response):
-        return security_headers(response)
-
-    # Load environment variables and verify
-    logger.info("Loading environment variables...")
-    load_dotenv()
-    weather_api_key = os.getenv('WEATHER_API_KEY')
-    finnhub_api_key = os.getenv('FINNHUB_API_KEY')
-    news_api_key = "44ccd6d6e2ae4918af34dafc854e4c0b"
-    city = os.getenv('CITY', 'London')
-    
-    # Log configuration status
-    logger.info(f"Environment loaded - Weather API Key present: {'Yes' if weather_api_key else 'No'}")
-    logger.info(f"Environment loaded - Finnhub API Key present: {'Yes' if finnhub_api_key else 'No'}")
-    logger.info(f"Environment loaded - News API Key present: {'Yes' if news_api_key else 'No'}")
-    logger.info(f"City configured as: {city}")
-
     # Cache for storing data
     cache = {
         'weather': {'loading': True},
@@ -123,7 +46,52 @@ try:
         'news': {'loading': True},
         'last_update': None
     }
-    
+
+    def get_weather_data():
+        """Get weather data from OpenWeatherMap API"""
+        try:
+            if not weather_api_key:
+                logger.error("Weather API key not found in .env file")
+                return None
+
+            logger.info(f"Updating weather data for {city}")
+            weather_url = f"http://api.openweathermap.org/data/2.5/weather?q={city}&appid={weather_api_key}&units=metric"
+            weather_response = requests.get(weather_url)
+            logger.info(f"Weather API response status: {weather_response.status_code}")
+            
+            if weather_response.status_code == 200:
+                weather_data = weather_response.json()
+                temp_c = round(weather_data['main']['temp'])
+                temp_f = round((temp_c * 9/5) + 32)
+                return {
+                    'city': weather_data['name'],
+                    'temperature_c': temp_c,
+                    'temperature_f': temp_f,
+                    'description': weather_data['weather'][0]['description'],
+                    'humidity': weather_data['main']['humidity'],
+                    'wind_speed': weather_data['wind']['speed']
+                }
+            else:
+                logger.error(f"Weather API error: {weather_response.status_code}")
+                logger.error(f"Response content: {weather_response.text}")
+                return None
+        except Exception as e:
+            logger.error(f"Error fetching weather data: {str(e)}")
+            return None
+
+    def update_weather():
+        """Update weather data"""
+        try:
+            weather_data = get_weather_data()
+            if weather_data:
+                cache['weather'] = weather_data
+                logger.info("Weather data updated successfully")
+            else:
+                cache['weather'] = {'error': True}
+        except Exception as e:
+            logger.error(f"Error updating weather: {str(e)}")
+            cache['weather'] = {'error': True}
+        cache['last_update'] = datetime.now()
 
     def load_stock_config():
         """Load stock configuration from Azure App Configuration"""
@@ -313,52 +281,6 @@ try:
             logger.error(f"Error updating calendar: {str(e)}")
             cache['calendar'] = {'error': True}
 
-    def get_weather_data():
-        """Get weather data from OpenWeatherMap API"""
-        try:
-            if not weather_api_key:
-                logger.error("Weather API key not found in .env file")
-                return None
-
-            logger.info(f"Updating weather data for {city}")
-            weather_url = f"http://api.openweathermap.org/data/2.5/weather?q={city}&appid={weather_api_key}&units=metric"
-            weather_response = requests.get(weather_url)
-            logger.info(f"Weather API response status: {weather_response.status_code}")
-            
-            if weather_response.status_code == 200:
-                weather_data = weather_response.json()
-                temp_c = round(weather_data['main']['temp'])
-                temp_f = round((temp_c * 9/5) + 32)
-                return {
-                    'city': weather_data['name'],
-                    'temperature_c': temp_c,
-                    'temperature_f': temp_f,
-                    'description': weather_data['weather'][0]['description'],
-                    'humidity': weather_data['main']['humidity'],
-                    'wind_speed': weather_data['wind']['speed']
-                }
-            else:
-                logger.error(f"Weather API error: {weather_response.status_code}")
-                logger.error(f"Response content: {weather_response.text}")
-                return None
-        except Exception as e:
-            logger.error(f"Error fetching weather data: {str(e)}")
-            return None
-
-    def update_weather():
-        """Update weather data"""
-        try:
-            weather_data = get_weather_data()
-            if weather_data:
-                cache['weather'] = weather_data
-                logger.info("Weather data updated successfully")
-            else:
-                cache['weather'] = {'error': True}
-        except Exception as e:
-            logger.error(f"Error updating weather: {str(e)}")
-            cache['weather'] = {'error': True}
-        cache['last_update'] = datetime.now()
-
     def get_news_data():
         """Get news data from NewsAPI"""
         try:
@@ -441,15 +363,76 @@ try:
         update_news()
         logger.info("Initial data update completed")
 
-    @app.route('/trigger-weather')
-    def trigger_weather():
-        update_weather()
-        return "Weather updated", 200
+    def init_scheduler():
+        """Initialize the background scheduler"""
+        global scheduler
+        if scheduler is None:
+            try:
+                logger.info("Initializing background scheduler...")
+                scheduler = BackgroundScheduler()
+                scheduler.add_job(func=update_weather, trigger="interval", minutes=5)
+                scheduler.add_job(func=update_calendar, trigger="interval", minutes=15)
+                scheduler.add_job(func=update_stocks, trigger="interval", hours=1)
+                scheduler.add_job(func=update_news, trigger="interval", minutes=30)
+                scheduler.start()
+                logger.info("Background scheduler started successfully")
+                
+                # Perform initial data load
+                logger.info("Starting initial data load...")
+                update_all()
+                logger.info("Initial data load completed")
+                return True
+            except Exception as e:
+                logger.error(f"Failed to initialize scheduler: {str(e)}", exc_info=True)
+                return False
+        return True
 
-    @app.route('/cache')
-    def show_cache():
-        return jsonify(cache)
-  
+    # Initialize scheduler when the app starts
+    if not init_scheduler():
+        logger.error("Failed to initialize the application scheduler")
+
+    @app.route('/status')
+    def scheduler_status():
+        """Endpoint to check scheduler status"""
+        return jsonify({
+            'scheduler_running': bool(scheduler and scheduler.running),
+            'cache_status': {
+                'weather': not isinstance(cache['weather'], dict) or not cache['weather'].get('loading', False),
+                'stocks': not isinstance(cache['stocks'], dict) or not cache['stocks'].get('loading', False),
+                'news': not isinstance(cache['news'], dict) or not cache['news'].get('loading', False),
+                'calendar': not isinstance(cache['calendar'], dict) or not cache['calendar'].get('loading', False)
+            },
+            'last_update': str(cache['last_update']) if cache['last_update'] else None
+        })
+
+    @app.route('/trigger-update')
+    def trigger_update():
+        """Endpoint to manually trigger data updates"""
+        try:
+            update_all()
+            return jsonify({'status': 'success', 'message': 'Data update triggered successfully'})
+        except Exception as e:
+            logger.error(f"Error triggering update: {str(e)}")
+            return jsonify({'status': 'error', 'message': str(e)}), 500
+
+    # Apply security headers to all responses
+    @app.after_request
+    def after_request(response):
+        return security_headers(response)
+
+    # Load environment variables and verify
+    logger.info("Loading environment variables...")
+    load_dotenv()
+    weather_api_key = os.getenv('WEATHER_API_KEY')
+    finnhub_api_key = os.getenv('FINNHUB_API_KEY')
+    news_api_key = "44ccd6d6e2ae4918af34dafc854e4c0b"
+    city = os.getenv('CITY', 'London')
+    
+    # Log configuration status
+    logger.info(f"Environment loaded - Weather API Key present: {'Yes' if weather_api_key else 'No'}")
+    logger.info(f"Environment loaded - Finnhub API Key present: {'Yes' if finnhub_api_key else 'No'}")
+    logger.info(f"Environment loaded - News API Key present: {'Yes' if news_api_key else 'No'}")
+    logger.info(f"City configured as: {city}")
 
     @app.route('/')
     @rate_limit
