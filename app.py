@@ -32,21 +32,34 @@ logger.info(f"Python version: {sys.version}")
 logger.info(f"Working directory: {os.getcwd()}")
 logger.info(f"Directory contents: {os.listdir('.')}")
 
+# Initialize global variables
+weather_api_key = None
+finnhub_api_key = None
+news_api_key = None
+city = None
+
+def load_environment():
+    """Load environment variables into global scope"""
+    global weather_api_key, finnhub_api_key, news_api_key, city
+    
+    # Load environment variables
+    load_dotenv()
+    
+    # Set global variables
+    weather_api_key = os.getenv('WEATHER_API_KEY')
+    finnhub_api_key = os.getenv('FINNHUB_API_KEY')
+    news_api_key = os.getenv('NEWS_API_KEY', "44ccd6d6e2ae4918af34dafc854e4c0b")
+    city = os.getenv('CITY', 'Mooresville')
+    
+    # Log configuration status
+    logger.info(f"Environment loaded - Weather API Key present: {'Yes' if weather_api_key else 'No'}")
+    logger.info(f"Environment loaded - Finnhub API Key present: {'Yes' if finnhub_api_key else 'No'}")
+    logger.info(f"Environment loaded - News API Key present: {'Yes' if news_api_key else 'No'}")
+    logger.info(f"City configured as: {city}")
+
 # Load environment variables first
 logger.info("Loading environment variables...")
-load_dotenv()
-
-# Initialize global variables
-weather_api_key = os.getenv('WEATHER_API_KEY')
-finnhub_api_key = os.getenv('FINNHUB_API_KEY')
-news_api_key = os.getenv('NEWS_API_KEY', "44ccd6d6e2ae4918af34dafc854e4c0b")
-city = os.getenv('CITY', 'London')
-
-# Log configuration status
-logger.info(f"Environment loaded - Weather API Key present: {'Yes' if weather_api_key else 'No'}")
-logger.info(f"Environment loaded - Finnhub API Key present: {'Yes' if finnhub_api_key else 'No'}")
-logger.info(f"Environment loaded - News API Key present: {'Yes' if news_api_key else 'No'}")
-logger.info(f"City configured as: {city}")
+load_environment()
 
 try:
     app = Flask(__name__)
@@ -98,16 +111,22 @@ try:
     def update_weather():
         """Update weather data"""
         try:
+            logger.info("Starting weather update...")
+            logger.info(f"Current cache state before update: {cache['weather']}")
+            
             weather_data = get_weather_data()
+            logger.info(f"Received weather data: {weather_data}")
+            
             if weather_data:
                 cache['weather'] = weather_data
-                logger.info("Weather data updated successfully")
+                logger.info(f"Weather data updated successfully. New cache state: {cache['weather']}")
             else:
                 cache['weather'] = {'error': True}
+                logger.error("Weather data update failed - got None response")
+            cache['last_update'] = datetime.now()
         except Exception as e:
             logger.error(f"Error updating weather: {str(e)}")
             cache['weather'] = {'error': True}
-        cache['last_update'] = datetime.now()
 
     def load_stock_config():
         """Load stock configuration from Azure App Configuration"""
