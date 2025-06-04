@@ -14,6 +14,7 @@ from flask_compress import Compress
 import json
 import os.path
 import sys
+import pytz
 
 # Set up logging to both file and console
 logging.basicConfig(
@@ -232,18 +233,19 @@ try:
 
             service = build('calendar', 'v3', credentials=creds)
 
-            # Get the start and end of today in local time
-            now = datetime.now()
+            # Get the start and end of today in EST
+            est = pytz.timezone('America/New_York')
+            now = datetime.now(est)
             start_of_day = now.replace(hour=0, minute=0, second=0, microsecond=0)
             end_of_day = start_of_day + timedelta(days=1)
 
             # Convert to UTC for API
-            start_of_day_utc = start_of_day.isoformat() + 'Z'
-            end_of_day_utc = end_of_day.isoformat() + 'Z'
+            start_of_day_utc = start_of_day.astimezone(pytz.UTC).isoformat()
+            end_of_day_utc = end_of_day.astimezone(pytz.UTC).isoformat()
 
-            logger.info(f"Fetching calendar events between {start_of_day} and {end_of_day}")
-            logger.info(f"TimeMin: {start_of_day_utc}")
-            logger.info(f"TimeMax: {end_of_day_utc}")
+            logger.info(f"Fetching calendar events between {start_of_day} and {end_of_day} EST")
+            logger.info(f"UTC TimeMin: {start_of_day_utc}")
+            logger.info(f"UTC TimeMax: {end_of_day_utc}")
 
             events_result = service.events().list(
                 calendarId='primary',
@@ -254,10 +256,6 @@ try:
                 orderBy='startTime'
             ).execute()
 
-            # Log the full API response
-            logger.info("Full Calendar API Response:")
-            logger.info(str(events_result))
-
             events = events_result.get('items', [])
             
             if not events:
@@ -266,26 +264,18 @@ try:
 
             formatted_events = []
             for event in events:
-                logger.info(f"\nProcessing event details:")
-                logger.info(f"Event raw data: {str(event)}")
-                logger.info(f"Summary: {event.get('summary', 'No title')}")
-                logger.info(f"Start: {event['start']}")
-                logger.info(f"End: {event['end']}")
-                
                 start = event['start'].get('dateTime', event['start'].get('date'))
                 end = event['end'].get('dateTime', event['end'].get('date'))
                 
-                # Convert to datetime object
+                # Convert to datetime object in EST
                 if 'T' in start:  # This is a datetime
                     start_time = datetime.fromisoformat(start.replace('Z', '+00:00'))
-                    # Convert to local time
-                    start_time = start_time.astimezone()
+                    # Convert to EST
+                    start_time = start_time.astimezone(est)
                     # Format time as HH:MM
                     time_str = start_time.strftime('%H:%M')
-                    logger.info(f"Converted time: {time_str}")
                 else:  # This is a date
                     time_str = 'All day'
-                    logger.info("All day event")
 
                 formatted_events.append({
                     'time': time_str,
@@ -293,7 +283,7 @@ try:
                     'start': start,
                     'end': end
                 })
-                logger.info(f"Added event: {time_str} - {event['summary']}")
+                logger.info(f"Added event: {time_str} EST - {event['summary']}")
 
             logger.info(f"Found {len(formatted_events)} events for today")
             return formatted_events
