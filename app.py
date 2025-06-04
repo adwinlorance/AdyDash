@@ -306,15 +306,23 @@ try:
     def update_calendar():
         """Update calendar data"""
         try:
+            # Set loading state
+            cache['calendar'] = {'loading': True}
+            
             events = get_calendar_events()
             if events is not None:
-                cache['calendar'] = events
-                logger.info("Calendar data updated successfully")
+                if isinstance(events, list):
+                    cache['calendar'] = events
+                    logger.info(f"Calendar data updated successfully with {len(events)} events")
+                else:
+                    logger.error("Calendar events returned invalid format")
+                    cache['calendar'] = {'error': True, 'message': 'Invalid calendar data format'}
             else:
-                cache['calendar'] = {'error': True}
+                logger.error("Failed to fetch calendar events")
+                cache['calendar'] = {'error': True, 'message': 'Unable to fetch calendar events'}
         except Exception as e:
             logger.error(f"Error updating calendar: {str(e)}")
-            cache['calendar'] = {'error': True}
+            cache['calendar'] = {'error': True, 'message': str(e)}
 
     def get_news_data():
         """Get news data from NewsAPI"""

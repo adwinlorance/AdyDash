@@ -417,6 +417,27 @@
             padding: 20px;
             background-color: rgba(244, 67, 54, 0.1);
             border-radius: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            align-items: center;
+        }
+
+        .refresh-button {
+            background-color: var(--accent-negative);
+            color: white;
+            border: none;
+            padding: 8px 15px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 0.9em;
+            margin-top: 10px;
+        }
+
+        .refresh-button:hover {
+            background-color: #d32f2f;
+            transform: scale(1.05);
         }
         
         .news-list {
@@ -936,26 +957,38 @@
                 <h2>Today's Schedule</h2>
             </div>
             <div id="calendar">
-                {% if calendar.loading %}
+                {% if calendar is mapping and calendar.get('loading', False) %}
                     <div class="loading">
                         <div class="loading-spinner"></div>
                         <span>Loading calendar events...</span>
                     </div>
-                {% elif calendar.error %}
+                {% elif calendar is mapping and calendar.get('error') %}
                     <div class="error-message">
-                        Unable to load calendar events
+                        {{ calendar.get('message', 'Unable to load calendar events') }}
+                        <button onclick="location.href='/refresh-token'" class="refresh-button">
+                            Refresh Token
+                        </button>
                     </div>
                 {% elif calendar %}
-                    <ul class="calendar-list">
-                    {% for event in calendar %}
-                        <li class="calendar-item">
-                            <span class="calendar-time">{{ event.time }}</span>
-                            <span class="calendar-summary">{{ event.summary }}</span>
-                        </li>
-                    {% endfor %}
-                    </ul>
+                    {% if calendar|length > 0 %}
+                        <ul class="calendar-list">
+                        {% for event in calendar %}
+                            <li class="calendar-item">
+                                <span class="calendar-time">{{ event.time }}</span>
+                                <span class="calendar-summary">{{ event.summary }}</span>
+                            </li>
+                        {% endfor %}
+                        </ul>
+                    {% else %}
+                        <p class="no-events">No events scheduled for today</p>
+                    {% endif %}
                 {% else %}
-                    <p class="no-events">No events scheduled for today</p>
+                    <div class="error-message">
+                        Calendar data unavailable
+                        <button onclick="location.href='/refresh-token'" class="refresh-button">
+                            Refresh Token
+                        </button>
+                    </div>
                 {% endif %}
             </div>
         </div>
