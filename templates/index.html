@@ -71,8 +71,8 @@
         }
 
         .theme-option {
-            width: 30px;
-            height: 30px;
+            width: 25px;
+            height: 25px;
             border-radius: 50%;
             cursor: pointer;
             border: 2px solid transparent;
@@ -609,6 +609,8 @@
             background: var(--bg-widget);
             border-radius: var(--widget-radius);
             box-shadow: var(--widget-shadow);
+            position: relative;
+            z-index: 1;
         }
 
         .dashboard-logo {
@@ -741,6 +743,43 @@
         }
 
         @media screen and (max-width: 600px) {
+            .dashboard-header {
+                flex-direction: column;
+                align-items: center;
+                text-align: center;
+                padding: 15px;
+                margin-bottom: 60px; /* Make room for controls */
+            }
+
+            .controls {
+                position: relative;
+                top: auto;
+                right: auto;
+                margin-top: 10px;
+                width: 100%;
+                justify-content: center;
+                flex-wrap: wrap;
+                background: transparent;
+                box-shadow: none;
+            }
+
+            .theme-selector {
+                width: 100%;
+                justify-content: center;
+                margin-bottom: 5px;
+            }
+
+            .theme-option {
+                width: 22px;
+                height: 22px;
+            }
+
+            button {
+                padding: 6px 10px;
+                font-size: 0.9em;
+            }
+
+            /* Adjust body padding for mobile */
             body {
                 padding: 10px;
             }
@@ -751,14 +790,6 @@
 
             .widget-single {
                 grid-column: 1 / -1;
-            }
-
-            .dashboard-header {
-                padding: 10px 15px;
-            }
-
-            .widget {
-                padding: 15px;
             }
 
             .temp {
@@ -781,23 +812,6 @@
             .time-zone-label {
                 width: auto;
                 min-width: 100px;
-            }
-
-            /* Adjust controls for mobile */
-            .controls {
-                flex-wrap: wrap;
-                gap: 8px;
-                padding: 8px;
-            }
-
-            .theme-option {
-                width: 25px;
-                height: 25px;
-            }
-
-            button {
-                padding: 6px 12px;
-                font-size: 0.9em;
             }
         }
 
