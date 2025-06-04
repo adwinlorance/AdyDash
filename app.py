@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 from apscheduler.schedulers.background import BackgroundScheduler
 import logging
 from googleapiclient.discovery import build
-from calendar_setup import get_calendar_credentials
+from calendar_setup import get_calendar_credentials, refresh_credentials
 from config_manager import ConfigManager
 from middleware import rate_limit, security_headers, cache_control, validate_request, performance_monitor
 from flask_compress import Compress
@@ -31,6 +31,22 @@ logger.info("Starting application...")
 logger.info(f"Python version: {sys.version}")
 logger.info(f"Working directory: {os.getcwd()}")
 logger.info(f"Directory contents: {os.listdir('.')}")
+
+# Load environment variables first
+logger.info("Loading environment variables...")
+load_dotenv()
+
+# Initialize global variables
+weather_api_key = os.getenv('WEATHER_API_KEY')
+finnhub_api_key = os.getenv('FINNHUB_API_KEY')
+news_api_key = os.getenv('NEWS_API_KEY', "44ccd6d6e2ae4918af34dafc854e4c0b")
+city = os.getenv('CITY', 'London')
+
+# Log configuration status
+logger.info(f"Environment loaded - Weather API Key present: {'Yes' if weather_api_key else 'No'}")
+logger.info(f"Environment loaded - Finnhub API Key present: {'Yes' if finnhub_api_key else 'No'}")
+logger.info(f"Environment loaded - News API Key present: {'Yes' if news_api_key else 'No'}")
+logger.info(f"City configured as: {city}")
 
 try:
     app = Flask(__name__)
@@ -370,10 +386,25 @@ try:
             try:
                 logger.info("Initializing background scheduler...")
                 scheduler = BackgroundScheduler()
-                scheduler.add_job(func=update_weather, trigger="interval", minutes=5)
+                
+                # Only add jobs if their API keys are present
+                if weather_api_key:
+                    scheduler.add_job(func=update_weather, trigger="interval", minutes=5)
+                else:
+                    logger.warning("Weather API key missing - weather updates disabled")
+                    
                 scheduler.add_job(func=update_calendar, trigger="interval", minutes=15)
-                scheduler.add_job(func=update_stocks, trigger="interval", hours=1)
-                scheduler.add_job(func=update_news, trigger="interval", minutes=30)
+                
+                if finnhub_api_key:
+                    scheduler.add_job(func=update_stocks, trigger="interval", hours=1)
+                else:
+                    logger.warning("Finnhub API key missing - stock updates disabled")
+                
+                if news_api_key:
+                    scheduler.add_job(func=update_news, trigger="interval", minutes=30)
+                else:
+                    logger.warning("News API key missing - news updates disabled")
+                
                 scheduler.start()
                 logger.info("Background scheduler started successfully")
                 
@@ -415,24 +446,23 @@ try:
             logger.error(f"Error triggering update: {str(e)}")
             return jsonify({'status': 'error', 'message': str(e)}), 500
 
+    @app.route('/refresh-token')
+    def refresh_token():
+        """Endpoint to refresh Google Calendar token"""
+        try:
+            success = refresh_credentials()
+            if success:
+                update_calendar()  # Refresh calendar data after token refresh
+                return jsonify({'status': 'success', 'message': 'Token refreshed successfully'})
+            return jsonify({'status': 'error', 'message': 'Failed to refresh token'}), 400
+        except Exception as e:
+            logger.error(f"Error refreshing token: {str(e)}")
+            return jsonify({'status': 'error', 'message': str(e)}), 500
+
     # Apply security headers to all responses
     @app.after_request
     def after_request(response):
         return security_headers(response)
-
-    # Load environment variables and verify
-    logger.info("Loading environment variables...")
-    load_dotenv()
-    weather_api_key = os.getenv('WEATHER_API_KEY')
-    finnhub_api_key = os.getenv('FINNHUB_API_KEY')
-    news_api_key = "44ccd6d6e2ae4918af34dafc854e4c0b"
-    city = os.getenv('CITY', 'London')
-    
-    # Log configuration status
-    logger.info(f"Environment loaded - Weather API Key present: {'Yes' if weather_api_key else 'No'}")
-    logger.info(f"Environment loaded - Finnhub API Key present: {'Yes' if finnhub_api_key else 'No'}")
-    logger.info(f"Environment loaded - News API Key present: {'Yes' if news_api_key else 'No'}")
-    logger.info(f"City configured as: {city}")
 
     @app.route('/')
     @rate_limit
@@ -486,7 +516,19 @@ try:
             'environment': {
                 'weather_api_key': 'present' if os.getenv('WEATHER_API_KEY') else 'missing',
                 'finnhub_api_key': 'present' if os.getenv('FINNHUB_API_KEY') else 'missing',
-                'azure_app_config': 'present' if os.getenv('AZURE_APP_CONFIG_CONNECTION_STRING') else 'missing'
+                'azure_app_config': 'present' if os.getenv('AZURE_APP_CONFIG_CONNECTION_STRING') else 'missing',
+                'google_token': 'present' if os.getenv('GOOGLE_TOKEN_PICKLE') else 'missing',
+                'google_creds': 'present' if os.getenv('GOOGLE_CREDENTIALS_JSON') else 'missing'
+            },
+            'cache_status': {
+                'weather': cache.get('weather', {}),
+                'stocks': cache.get('stocks', {}),
+                'calendar': cache.get('calendar', {}),
+                'news': cache.get('news', {})
+            },
+            'scheduler_status': {
+                'running': bool(scheduler and scheduler.running),
+                'jobs': [job.name for job in scheduler.get_jobs()] if scheduler else []
             }
         }
 
@@ -494,68 +536,85 @@ try:
         try:
             if weather_api_key:
                 weather_url = f"http://api.openweathermap.org/data/2.5/weather?q={city}&appid={weather_api_key}&units=metric"
-                response = requests.get(weather_url, timeout=10)  # Increased timeout for single instance
-                health_status['services']['weather_api'] = 'healthy' if response.status_code == 200 else f'error: {response.status_code}'
+                response = requests.get(weather_url, timeout=10)
+                health_status['services']['weather_api'] = {
+                    'status': 'healthy' if response.status_code == 200 else 'error',
+                    'code': response.status_code,
+                    'response': response.json() if response.status_code == 200 else response.text
+                }
             else:
-                health_status['services']['weather_api'] = 'error: no API key'
+                health_status['services']['weather_api'] = {'status': 'error', 'reason': 'no API key'}
         except Exception as e:
             logger.error(f"Health check - Weather API error: {str(e)}")
-            health_status['services']['weather_api'] = f'error: {str(e)}'
+            health_status['services']['weather_api'] = {'status': 'error', 'error': str(e)}
 
         # Check Finnhub API
         try:
             if finnhub_api_key:
                 headers = {'X-Finnhub-Token': finnhub_api_key}
-                response = requests.get('https://finnhub.io/api/v1/quote?symbol=AAPL', headers=headers, timeout=10)  # Increased timeout
-                health_status['services']['finnhub_api'] = 'healthy' if response.status_code == 200 else f'error: {response.status_code}'
+                response = requests.get('https://finnhub.io/api/v1/quote?symbol=AAPL', headers=headers, timeout=10)
+                health_status['services']['finnhub_api'] = {
+                    'status': 'healthy' if response.status_code == 200 else 'error',
+                    'code': response.status_code,
+                    'response': response.json() if response.status_code == 200 else response.text
+                }
             else:
-                health_status['services']['finnhub_api'] = 'error: no API key'
+                health_status['services']['finnhub_api'] = {'status': 'error', 'reason': 'no API key'}
         except Exception as e:
             logger.error(f"Health check - Finnhub API error: {str(e)}")
-            health_status['services']['finnhub_api'] = f'error: {str(e)}'
+            health_status['services']['finnhub_api'] = {'status': 'error', 'error': str(e)}
 
         # Check Google Calendar
         try:
             creds = get_calendar_credentials()
             if creds:
-                health_status['services']['google_calendar'] = 'healthy'
+                service = build('calendar', 'v3', credentials=creds)
+                # Try to list calendars as a test
+                calendar_list = service.calendarList().list().execute()
+                health_status['services']['google_calendar'] = {
+                    'status': 'healthy',
+                    'calendars_found': len(calendar_list.get('items', []))
+                }
             else:
-                health_status['services']['google_calendar'] = 'error: no credentials'
+                health_status['services']['google_calendar'] = {'status': 'error', 'reason': 'no credentials'}
         except Exception as e:
             logger.error(f"Health check - Google Calendar error: {str(e)}")
-            health_status['services']['google_calendar'] = f'error: {str(e)}'
+            health_status['services']['google_calendar'] = {'status': 'error', 'error': str(e)}
 
         # Check Azure App Configuration
         try:
             config = config_manager.get_stock_config()
             if config and 'stocks' in config:
-                health_status['services']['azure_config'] = 'healthy'
+                health_status['services']['azure_config'] = {
+                    'status': 'healthy',
+                    'config_found': True,
+                    'stocks_configured': len(config['stocks'])
+                }
             else:
-                health_status['services']['azure_config'] = 'error: no configuration'
+                health_status['services']['azure_config'] = {'status': 'error', 'reason': 'no configuration'}
         except Exception as e:
             logger.error(f"Health check - Azure Config error: {str(e)}")
-            health_status['services']['azure_config'] = f'error: {str(e)}'
+            health_status['services']['azure_config'] = {'status': 'error', 'error': str(e)}
 
-        # For single instance, we'll be more lenient - only mark as unhealthy if all critical services are down
-        critical_services = ['weather_api', 'finnhub_api']  # Define which services are critical
+        # Check critical services
+        critical_services = ['weather_api', 'finnhub_api']
         critical_services_status = [
-            health_status['services'][service] == 'healthy' 
+            health_status['services'][service].get('status') == 'healthy'
             for service in critical_services
         ]
         
-        is_healthy = any(critical_services_status)  # Need at least one critical service working
+        is_healthy = any(critical_services_status)
 
         if not is_healthy:
             health_status['status'] = 'unhealthy'
             logger.warning("Health check failed - all critical services are down", extra=health_status)
-            return jsonify(health_status), 503  # Service Unavailable
-        
-        # If we get here, at least one critical service is working
+            return jsonify(health_status), 503
+
         if not all(critical_services_status):
             health_status['status'] = 'degraded'
             logger.warning("Health check warning - some services are down", extra=health_status)
-            return jsonify(health_status), 200  # Still return 200 to prevent instance replacement
-        
+            return jsonify(health_status), 200
+
         logger.info("Health check passed", extra=health_status)
         return jsonify(health_status), 200
 
