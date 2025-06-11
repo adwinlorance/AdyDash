@@ -1,11 +1,21 @@
 from functools import wraps
-from flask import request, Response, make_response
+from flask import request, Response, make_response, redirect
 import time
 from datetime import datetime, timedelta
 import threading
 import logging
 
 logger = logging.getLogger(__name__)
+
+# HTTPS redirect
+def https_redirect(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not request.is_secure and not request.headers.get('X-Forwarded-Proto', 'http') == 'https':
+            url = request.url.replace('http://', 'https://', 1)
+            return redirect(url, code=301)
+        return f(*args, **kwargs)
+    return decorated_function
 
 # Rate limiting
 class RateLimiter:

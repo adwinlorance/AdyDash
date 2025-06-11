@@ -9,7 +9,7 @@ import logging
 from googleapiclient.discovery import build
 from calendar_setup import get_calendar_credentials, refresh_credentials
 from config_manager import ConfigManager
-from middleware import rate_limit, security_headers, cache_control, validate_request, performance_monitor
+from middleware import rate_limit, security_headers, cache_control, validate_request, performance_monitor, https_redirect
 from flask_compress import Compress
 import json
 import os.path
@@ -464,6 +464,7 @@ try:
             return jsonify({'status': 'error', 'message': str(e)}), 500
 
     @app.route('/refresh-token')
+    @https_redirect
     def refresh_token():
         """Endpoint to refresh Google Calendar token"""
         try:
@@ -482,6 +483,7 @@ try:
         return security_headers(response)
 
     @app.route('/')
+    @https_redirect
     @rate_limit
     @performance_monitor
     @cache_control(max_age=300)  # Cache for 5 minutes
@@ -501,6 +503,7 @@ try:
 
     # Basic health check endpoint that doesn't depend on external services
     @app.route('/health')
+    @https_redirect
     def health_check():
         try:
             health_status = {
@@ -515,6 +518,7 @@ try:
 
     # Full health check endpoint for detailed monitoring
     @app.route('/health/full')
+    @https_redirect
     @rate_limit
     @performance_monitor
     @cache_control(max_age=300)
